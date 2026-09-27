@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=StreamingApp
+Comment=Condividi schermo e audio in una stanza privata
+Exec=streaming_app
+Icon=streaming-app
+Terminal=false
+Categories=Network;AudioVideo;
+StartupNotify=true

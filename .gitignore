@@ -1,0 +1,7 @@
+/build*/
+/CMakeUserPresets.json
+*.user
+/.local/
+/.vs/
+/dist/
+AGENTS.md

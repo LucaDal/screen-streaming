@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+appdir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+export PATH="$appdir/usr/bin:$PATH"
+export LD_LIBRARY_PATH="$appdir/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export QT_PLUGIN_PATH="$appdir/usr/plugins"
+export QT_MEDIA_BACKEND=ffmpeg
+export PIPEWIRE_MODULE_DIR="$appdir/usr/lib/pipewire-0.3"
+export SPA_PLUGIN_DIR="$appdir/usr/lib/spa-0.2"
+export PIPEWIRE_CONFIG_DIR="$appdir/usr/share/pipewire"
+export GST_PLUGIN_PATH_1_0="$appdir/usr/lib/gstreamer-1.0"
+export GST_PLUGIN_SYSTEM_PATH_1_0="$appdir/usr/lib/gstreamer-1.0"
+export GST_PLUGIN_SCANNER_1_0="$appdir/usr/libexec/gstreamer-1.0/gst-plugin-scanner"
+# Do not reuse the host registry for a different set/version of plugins.
+export GST_REGISTRY_1_0="${XDG_CACHE_HOME:-$HOME/.cache}/StreamingApp/gstreamer-registry.bin"
+mkdir -p -- "$(dirname -- "$GST_REGISTRY_1_0")"
+if [ "${1:-}" = "--check-runtime" ]; then
+    for element in appsrc appsink videoconvert x264enc h264parse avdec_h264 webrtcbin nicesrc nicesink rtpbin rtph264pay rtph264depay dtlssrtpenc dtlssrtpdec opusenc opusdec rtpopuspay rtpopusdepay audioconvert audioresample volume valve pulsesrc pulsesink; do
+        "$appdir/usr/bin/gst-inspect-1.0" "$element" >/dev/null
+    done
+    echo "GStreamer: tutti i plugin richiesti sono disponibili."
+    export QT_QPA_PLATFORM=offscreen
+    exec "$appdir/usr/bin/streaming_app" --version
+fi
+exec "$appdir/usr/bin/streaming_app" "$@"
