@@ -22,7 +22,8 @@ int main(int argc, char** argv) {
     TurnService turn;
     SignalingServer server(serverKey, QWebSocketServer::NonSecureMode);
     WebRtcPeer::IceConfig ice;
-    const bool withTurn = app.arguments().contains("--turn") || app.arguments().contains("--turn-tcp");
+    const bool automaticTurn = app.arguments().contains("--turn-auto");
+    const bool withTurn = automaticTurn || app.arguments().contains("--turn") || app.arguments().contains("--turn-tcp");
     QTemporaryDir turnDirectory;
     if (withTurn) {
         auto executable = qEnvironmentVariable("STREAMING_TEST_TURNSERVER");
@@ -33,19 +34,33 @@ int main(int argc, char** argv) {
             if (address.protocol() == QAbstractSocket::IPv4Protocol && !address.isLoopback()) { relay = address; break; }
         if (relay.isNull()) return 77;
         QTcpServer portProbe;
-        if (!portProbe.listen(QHostAddress::LocalHost, 0)) return 1;
-        const auto turnPort = portProbe.serverPort(); portProbe.close();
-        QFile config(turnDirectory.filePath("turnserver.conf"));
-        if (!config.open(QIODevice::WriteOnly)) return 1;
-        config.write(QString("listening-ip=%1\nrelay-ip=%1\nlistening-port=%2\n"
-            "min-port=54000\nmax-port=54100\nrealm=streaming-test\nuse-auth-secret\n"
-            "static-auth-secret=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n"
-            "no-tls\nno-dtls\nno-cli\nno-tcp-relay\nrelay-threads=1\nverbose\n").arg(relay.toString()).arg(turnPort).toUtf8());
-        config.close();
-        const auto transport = app.arguments().contains("--turn-tcp") ? "tcp" : "udp";
+        quint16 turnPort = 0;
+        do {
+            if (!portProbe.listen(QHostAddress::LocalHost, 0)) return 1;
+            turnPort = portProbe.serverPort(); portProbe.close();
+        } while (turnPort >= 54000 && turnPort <= 54100);
         QString error;
-        if (!turn.configure(config.fileName(), {QString("turn://%1:%2?transport=%3").arg(relay.toString()).arg(turnPort).arg(transport)}, error)
-            || !turn.start(executable, error)) { std::cerr << error.toStdString() << '\n'; return 1; }
+        if (automaticTurn) {
+            TurnService::AutomaticConfig options;
+            options.serverUrl = QUrl(QString("wss://%1:8443").arg(relay.toString()));
+            options.port = turnPort;
+            options.minPort = 54000;
+            options.maxPort = 54100;
+            if (!turn.configureAutomatic(options, error)) { std::cerr << error.toStdString() << '\n'; return 1; }
+        } else {
+            QFile config(turnDirectory.filePath("turnserver.conf"));
+            if (!config.open(QIODevice::WriteOnly)) return 1;
+            config.write(QString("listening-ip=%1\nrelay-ip=%1\nlistening-port=%2\n"
+                "min-port=54000\nmax-port=54100\nrealm=streaming-test\nuse-auth-secret\n"
+                "static-auth-secret=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n"
+                "no-tls\nno-dtls\nno-cli\nno-tcp-relay\nrelay-threads=1\nverbose\n").arg(relay.toString()).arg(turnPort).toUtf8());
+            config.close();
+            const auto transport = app.arguments().contains("--turn-tcp") ? "tcp" : "udp";
+            if (!turn.configure(config.fileName(), {QString("turn://%1:%2?transport=%3").arg(relay.toString()).arg(turnPort).arg(transport)}, error)) {
+                std::cerr << error.toStdString() << '\n'; return 1;
+            }
+        }
+        if (!turn.start(executable, error)) { std::cerr << error.toStdString() << '\n'; return 1; }
         server.setTurnService(&turn);
         // No manual URI: successful frames prove automatic server credentials
         // and real relay allocations on BOTH peers, including publisher handoff.

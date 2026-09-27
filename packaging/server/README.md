@@ -1,125 +1,121 @@
-# Signaling e TURN sulla stessa macchina
+# Signaling and TURN server
 
-Il signaling può avviare **coturn**, distribuire credenziali temporanee ai
-partecipanti autenticati e fermare coturn alla propria uscita. Non occorre
-configurare il campo TURN sui due client. Installa coturn sul server Linux:
+Run one signaling server on a Linux machine reachable by both clients.
+It manages rooms, starts coturn, and supplies temporary TURN credentials.
+Clients can run on Linux or Windows.
 
-```sh
-# Debian / Ubuntu
-sudo apt install coturn
-# Arch / EndeavourOS
-sudo pacman -S coturn
-```
+## Setup
 
-Se l'installazione ha attivato `coturn.service`, fermalo prima di usare la
-modalità gestita: due istanze non possono occupare le stesse porte.
-Non fermare un'istanza già usata da altri servizi; assegna invece porte e
-intervalli relay distinti alla nuova istanza.
-
-## Configurazione
-
-Copia `packaging/server/turnserver.conf.example` fuori dal repository e
-proteggi il file con `chmod 600`. Genera un segreto con `openssl rand -hex 32`
-e sostituisci `REPLACE_WITH_64_HEX_DIGITS` con il risultato, senza virgolette.
-Il segreto TURN è diverso dalla chiave usata per creare stanze.
-
-Se la macchina ha direttamente un IP pubblico, non occorre `external-ip`.
-Se è dietro un router/NAT, imposta `relay-ip` all'IP locale del server e
-`external-ip=IP_PUBBLICO/IP_LOCALE`. Sul router inoltra le porte indicate
-sotto verso il server, mantenendo invariati i numeri delle porte.
-Un server dietro CGNAT senza port forwarding richiede un VPS con IP pubblico
-o un'altra macchina pubblicamente raggiungibile.
-
-Esempio di avvio dalla directory del progetto, adattando dominio e percorsi:
+Install coturn using your distribution's package manager:
 
 ```sh
-./build/signaling_server --port 8443 --token-file /percorso/token \
-  --cert /percorso/fullchain.pem --key /percorso/privkey.pem \
-  --turn-config /percorso/turnserver.conf \
-  --turn-url 'turn://stream.example.com:3478?transport=udp' \
-  --turn-url 'turn://stream.example.com:3478?transport=tcp'
+sudo apt install coturn       # Debian / Ubuntu
+# or: sudo pacman -S coturn   # Arch / EndeavourOS
 ```
 
-Il dominio TURN deve risolvere all'IP pubblico del server, senza un proxy
-HTTP/CDN davanti. Può essere lo stesso dominio del signaling. Non inserire
-username o password in `--turn-url`: vengono generati dal server.
-`--turn-executable /percorso/turnserver` permette un eseguibile fuori da PATH.
-I client continuano a funzionare su Linux e Windows; il deployment coturn
-qui documentato è Linux. Su un host Windows usa una VM Linux con rete e
-porte pubblicamente raggiungibili per signaling e coturn.
+Use a domain with one DNS A record pointing directly to the server's public
+IPv4 address, without an HTTP proxy/CDN. Behind a router, forward the ports
+listed below. Behind CGNAT without port forwarding, use a publicly reachable server.
 
-Il signaling rifiuta configurazioni senza autenticazione REST, segreti non
-validi e modalità daemon. Legge una copia privata della configurazione:
-usa percorsi **assoluti** per eventuali file referenziati e riavvia il servizio
-dopo una modifica. L'avvio fallisce se coturn manca. Se coturn termina durante
-l'esecuzione, termina anche il signaling con errore. SIGINT/SIGTERM arrestano
-entrambi; per l'avvio al boot si può gestire il comando con systemd,
-`Restart=on-failure` e `KillMode=control-group`.
+Create `signaling.ini` outside the repository:
 
-## Porte da aprire
+```ini
+server-url=wss://stream.example.com:8443
+token=REPLACE_WITH_YOUR_RANDOM_TOKEN
+cert=/path/to/fullchain.pem
+key=/path/to/privkey.pem
+```
 
-| Porta | Protocollo | Uso |
+Replace the domain and paths. Generate a token with `openssl rand -hex 32`
+and paste the result into `token`. It must contain 16–1024 characters.
+Alternatively, replace `token` with `token-file=/path/to/token`; use only one.
+
+The certificate must be trusted by the clients and match the domain.
+Use a matching RSA or EC private key in PEM format without a passphrase.
+The user running the server must be able to read both files.
+
+From the project directory, after building:
+
+```sh
+chmod 600 /path/to/signaling.ini
+./build/signaling_server --config /path/to/signaling.ini
+```
+
+Relative paths in the INI are relative to its directory. `~` and environment
+variables are not expanded. Command-line options override INI values.
+Comments may start with `#` or `;` on separate lines.
+See [signaling.ini.example](signaling.ini.example) for optional settings,
+or run `./build/signaling_server --help`.
+
+## Network ports
+
+| Port | Protocol | Purpose |
 | --- | --- | --- |
-| 8443 | TCP | Signaling WSS |
-| 3478 | UDP e TCP | Accesso dei client a TURN/STUN |
-| 49160–49260 | UDP | Allocazioni relay coturn |
+| 8443 | TCP | WSS signaling |
+| 3478 | UDP and TCP | TURN connections |
+| 49160–49260 | UDP | TURN relay traffic |
 
-Aprile sia nel firewall della macchina sia in eventuali security group e
-router. Aprire solo 3478 non basta. Il traffico in uscita e le risposte UDP
-devono essere consentiti. Il relay inoltra tutto il media: dimensiona banda
-in ingresso e in uscita e traffico mensile rispetto al bitrate selezionato.
-**Non serve aprire porte sui router dei partecipanti**: entrambi i client
-iniziano connessioni in uscita verso il server TURN.
+Allow these ports in the server firewall, any cloud firewall, and the router.
+Forward TURN ports without changing their numbers. Participants do not need
+to forward ports on their routers. Avoid running another coturn instance on
+the same ports.
 
-Per reti che bloccano anche TCP 3478 puoi aggiungere TURN su TLS: rimuovi
-`no-tls`, aggiungi `tls-listening-port=5349`, `cert=/percorso/fullchain.pem` e
-`pkey=/percorso/privkey.pem`, apri TCP 5349 e aggiungi
-`--turn-url 'turns://stream.example.com:5349?transport=tcp'`.
-Serve un certificato valido per quel dominio. Puoi scegliere 443 se libera
-e se il processo ha i permessi necessari per una porta privilegiata.
-TURN non passa attraverso un normale reverse proxy HTTP.
+The signaling port comes from `server-url` (443 if omitted); `port` overrides
+the local listening port. Optional INI settings `turn-port`, `turn-min-port`,
+and `turn-max-port` change the TURN ports. Set `turn-relay-ip` if you need to
+select a specific local interface.
 
-## Verifica dai due PC
+## Automatic TURN and dynamic IP
 
-1. Ricompila e aggiorna **signaling ed entrambi i client**.
-2. Crea la stanza usando `wss://stream.example.com:8443` e invia l'invito.
-3. Su entrambi i client lascia il campo **TURN** vuoto e seleziona
-   **Usa solo TURN** prima di entrare nella stanza.
-4. Prova la condivisione in entrambe le direzioni. Se funziona, disattiva
-   **Usa solo TURN** per consentire anche connessioni dirette.
+At startup, the server resolves the domain, detects its local IPv4 address,
+and generates a private `turnserver.conf` with a random TURN secret.
+It starts and stops coturn automatically.
 
-Un TURN manuale nel client sostituisce quello distribuito dal server.
-Le credenziali vengono emesse all'avvio di ogni condivisione, anche se la
-stanza è rimasta inattiva a lungo; non sono salvate né incluse nell'invito.
-Durano 24 ore: per sessioni più lunghe ferma e riavvia la condivisione prima
-della scadenza. Non è ancora implementato il rinnovo durante una sessione.
-Uscire dalla stanza non revoca immediatamente le credenziali già emesse.
+**After a public IP change, update your dynamic DNS and restart the signaling
+server.** The app does not update DNS or reload it during a session. Recreate
+the room after restarting.
 
-Se il signaling funziona ma WebRTC va in timeout, verifica IP pubblico,
-`external-ip`, intervallo relay, segreto e log coturn. Se WSS non si collega,
-verifica prima DNS, certificato e TCP 8443: TURN non risolve errori TLS del
-signaling o plugin multimediali mancanti.
+The generated file is in `/tmp/signaling_server-XXXXXX/turnserver.conf` on
+Linux and is deleted on normal shutdown. The startup log shows the directory
+in the PID file path. It contains a secret; do not share the full file.
 
-Il media resta cifrato DTLS-SRTP anche con `turn://`; `turns://` aggiunge TLS
-alla tratta client–TURN. Il relay inoltra i pacchetti cifrati senza decodificare
-audio/video. Il server di signaling rimane un componente fidato.
+## Connect and check
 
-## Test automatici
+1. In the first client, enter the WSS URL and the same `token` as in the INI.
+2. Leave TURN empty on both clients. Enable relay-only mode on both to test coturn.
+3. Create a room, share its invitation, and test screen sharing in both directions.
+4. Disable relay-only mode afterward to allow direct connections too.
 
-Con coturn installato, CTest esegue `room_turn_udp` e `room_turn_tcp`: due
-client senza TURN manuale ricevono le credenziali dal signaling, forzano il
-relay, scambiano frame H.264 e si alternano come mittente. Se coturn manca,
-questi due test vengono saltati. Per un eseguibile fuori da PATH:
+TURN credentials last 24 hours. For longer sessions, stop and restart sharing
+before they expire.
 
-```sh
-STREAMING_TEST_TURNSERVER=/percorso/turnserver \
-  ctest --test-dir build --output-on-failure -R 'turn_'
+- **WSS does not connect:** check DNS, TCP 8443, certificate paths, and trust.
+- **Video times out:** check the public IP, TURN ports, and router forwarding.
+- **Coturn warns about `turn_server_cert.pem` or `turn_server_pkey.pem`:** these
+  default TURN certificates are unused in automatic mode. Coturn 4.18 may still
+  warn about them; they are separate from the signaling certificate.
+- **The log mentions the private part of `external-ip`:** this is the local
+  server address. The mapping is `external-ip=PUBLIC_IP/LOCAL_IP`.
+
+Automatic mode uses `turn://`; WebRTC audio/video remains encrypted with
+DTLS-SRTP, and signaling uses WSS.
+
+## Custom TURN configuration
+
+For custom coturn settings, start from [turnserver.conf.example](turnserver.conf.example).
+Replace its secret placeholder with a separate `openssl rand -hex 32` value.
+Behind NAT, set `relay-ip` and `external-ip=PUBLIC_IP/LOCAL_IP`.
+
+In the signaling INI, remove `server-url` and use:
+
+```ini
+port=8443
+turn-config=/path/to/turnserver.conf
+turn-url=turn://stream.example.com:3478?transport=udp, turn://stream.example.com:3478?transport=tcp
 ```
 
-Il test delle credenziali verifica anche HMAC, scadenza, escaping degli URL
-e rifiuto di configurazioni senza autenticazione. I test di rete richiedono
-socket disponibili e un'interfaccia IPv4 diversa dal loopback; non sostituiscono
-la verifica di firewall e NAT dalle vostre reti reali.
-
-Riferimenti: [configurazione coturn](https://github.com/coturn/coturn/blob/master/examples/etc/turnserver.conf),
-[credenziali e URL GStreamer](https://gstreamer.freedesktop.org/documentation/webrtc/).
+Keep the token and WSS certificate settings. Protect the coturn file with
+`chmod 600` and use absolute paths inside it.
+For TURN over TLS, remove `no-tls`, add `tls-listening-port=5349`, `cert`, and
+`pkey` to the coturn file, open TCP 5349, and include
+`turns://stream.example.com:5349?transport=tcp` in `turn-url`.

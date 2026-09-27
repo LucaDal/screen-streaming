@@ -25,7 +25,7 @@ add_library(streaming_network src/network/WebRtcPeer.cpp src/network/WebRtcPeer.
 target_compile_definitions(streaming_network PRIVATE GST_USE_UNSTABLE_API)
 target_include_directories(streaming_network PUBLIC src/network)
 target_link_libraries(streaming_network PUBLIC video_pipeline Qt6::Network Qt6::WebSockets)
-qt_add_executable(signaling_server src/network/server_main.cpp)
+qt_add_executable(signaling_server src/network/server_main.cpp src/network/ServerConfig.cpp src/network/ServerConfig.h)
 target_link_libraries(signaling_server PRIVATE streaming_network)
 
 qt_add_executable(streaming_app
@@ -66,6 +66,14 @@ set_target_properties(streaming_app PROPERTIES WIN32_EXECUTABLE TRUE)
 
 include(CTest)
 if(BUILD_TESTING)
+    qt_add_executable(server_config_test tests/ServerConfigTest.cpp src/network/ServerConfig.cpp)
+    target_include_directories(server_config_test PRIVATE src/network)
+    target_link_libraries(server_config_test PRIVATE Qt6::Core)
+    add_test(NAME signaling_config_file COMMAND server_config_test ${CMAKE_CURRENT_SOURCE_DIR}/packaging/server/signaling.ini.example)
+    set_tests_properties(signaling_config_file PROPERTIES TIMEOUT 10)
+    if(MSVC)
+        target_compile_options(server_config_test PRIVATE /utf-8)
+    endif()
     qt_add_executable(turn_service_test tests/TurnServiceTest.cpp)
     target_link_libraries(turn_service_test PRIVATE streaming_network)
     add_test(NAME turn_credentials_and_config COMMAND turn_service_test)
@@ -77,7 +85,10 @@ if(BUILD_TESTING)
     add_test(NAME room_invitation_and_handoff COMMAND room_test)
     add_test(NAME room_turn_udp COMMAND room_test --turn)
     add_test(NAME room_turn_tcp COMMAND room_test --turn-tcp)
-    set_tests_properties(room_turn_udp room_turn_tcp PROPERTIES RESOURCE_LOCK coturn_ports)
+    add_test(NAME room_turn_auto COMMAND room_test --turn-auto)
+    set_tests_properties(room_turn_udp room_turn_tcp room_turn_auto PROPERTIES RESOURCE_LOCK coturn_ports)
+    set_tests_properties(room_turn_udp room_turn_tcp room_turn_auto PROPERTIES
+        FAIL_REGULAR_EXPRESSION "Bad configuration format;no-cli option is deprecated")
     qt_add_executable(mainwindow_test tests/MainWindowTest.cpp src/MainWindow.cpp src/MainWindow.h
         src/ScreenCaptureController.cpp src/ScreenCaptureController.h)
     target_include_directories(mainwindow_test PRIVATE src)
@@ -100,7 +111,7 @@ if(BUILD_TESTING)
     set_tests_properties(fullscreen_native_surface saved_server_key PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME webrtc_loopback COMMAND webrtc_test)
     add_test(NAME webrtc_audio_loopback COMMAND webrtc_test --audio)
-    set_tests_properties(webrtc_loopback webrtc_audio_loopback room_invitation_and_handoff room_turn_udp room_turn_tcp PROPERTIES TIMEOUT 45 ENVIRONMENT
+    set_tests_properties(webrtc_loopback webrtc_audio_loopback room_invitation_and_handoff room_turn_udp room_turn_tcp room_turn_auto PROPERTIES TIMEOUT 45 ENVIRONMENT
         "QT_QPA_PLATFORM=offscreen;GST_PLUGIN_PATH_1_0=${CMAKE_CURRENT_SOURCE_DIR}/.local/gstreamer-1.0"
         SKIP_RETURN_CODE 77)
     qt_add_executable(video_pipeline_test tests/VideoPipelineTest.cpp)

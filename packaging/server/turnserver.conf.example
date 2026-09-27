@@ -22,8 +22,9 @@ relay-threads=2
 # UDP and TCP clients are enabled on 3478; RFC 6062 TCP relays are unnecessary.
 no-tcp-relay
 no-tls
-no-dtls
-no-cli
+# The managed signaling server adapts these flags for older coturn versions.
+dtls=0
+cli=0
 no-multicast-peers
 # Do not enable allow-loopback-peers on an Internet-facing deployment.
 denied-peer-ip=0.0.0.0-0.255.255.255

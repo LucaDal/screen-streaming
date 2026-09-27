@@ -1,143 +1,59 @@
-# Distribuire StreamingApp
+# Packaging
 
-## Cosa inviare
+Build on the target operating system, with the dependencies listed in the
+[main README](../README.md). Run these commands from the project directory.
 
-| Destinazione | File da condividere | Avvio |
-| --- | --- | --- |
-| Linux, stessa architettura e glibc compatibile | `dist/StreamingApp-x86_64.AppImage` (oppure aarch64) | Rendere eseguibile e aprire |
-| Windows 10/11 x64 | `dist/StreamingApp-windows-x64.zip` | Estrarre **tutta** la cartella e aprire `streaming_app.exe` |
+## Linux AppImage
 
-Invia anche l’**invito alla stanza**, copiato dal client. Il destinatario lo
-incolla e preme Entra. Non gli servono sorgenti, CMake, kit Qt, cartella build,
-chiave del server o `token-file`. Il signaling gira su un solo server
-raggiungibile da entrambi: non deve essere avviato su ogni PC.
-
-Per PC diversi usa un indirizzo **WSS raggiungibile da entrambi** con un
-certificato attendibile. Un invito contenente `127.0.0.1` o `localhost` funziona
-solo sulla macchina del server. Su Internet possono servire STUN/TURN,
-configurabili in Impostazioni → Rete e diagnostica.
-
-## Salvare la chiave
-
-Nelle impostazioni seleziona **Ricorda la chiave su questo PC** e premi
-**Salva impostazioni**. L’opzione è disattivata inizialmente. La chiave viene
-riletta al prossimo avvio; togliere la spunta rimuove subito la copia salvata.
-Le preferenze vengono salvate anche alla chiusura dell’app.
-
-Il salvataggio usa le preferenze locali dell’utente, **senza cifratura**:
-`~/.config/StreamingApp/StreamingApp.conf` su Linux (o la directory
-`XDG_CONFIG_HOME`) e il registro utente su Windows. Su Linux il file con la
-chiave ha permessi riservati al proprietario. I pacchetti vengono creati solo
-da eseguibili, librerie e risorse: non includono queste preferenze o gli inviti.
-
-## Creare l’AppImage su Linux
-
-Servono le dipendenze di compilazione indicate nel README, Python 3, `readelf`,
-`gst-inspect-1.0`, `pactl`, `qmake6` e i file di sviluppo PipeWire/SPA. Il primo
-avvio scarica `linuxdeploy` e il runtime AppImage dai repository ufficiali
-in `.local/appimage-tools`. Non richiede installazioni globali o root.
-
-Dalla directory del progetto:
+Additional tools: Python 3, `readelf`, `gst-inspect-1.0`, `pactl`, `qmake6`,
+and PipeWire/SPA development files.
 
 ```sh
 python3 scripts/package-appimage.py
-```
-
-Lo script compila in Release, prepara `build-appimage/AppDir`, include runtime
-Qt/FFmpeg, plugin Qt per X11/Wayland/TLS, plugin GStreamer H.264/Opus/WebRTC,
-scanner, `pactl` e il client PipeWire, quindi scrive il file in `dist/`.
-È possibile usare `--build-dir altro-build` o `--skip-build` per una build
-Release già pronta. `QMAKE=/percorso/qmake6` seleziona un kit Qt specifico,
-che deve essere lo stesso usato da CMake. Le librerie e gli strumenti devono
-avere l’architettura della macchina di compilazione.
-
-Il desktop del destinatario deve comunque fornire i propri servizi:
-PipeWire/xdg-desktop-portal con ScreenCast su Wayland, PulseAudio o
-PipeWire-Pulse per l’audio, driver grafici e D-Bus. L’AppImage include le
-librerie client, non avvia un secondo server audio o un portale privato.
-
-Per avviare e controllare il runtime incluso:
-
-```sh
 chmod +x dist/StreamingApp-x86_64.AppImage
 ./dist/StreamingApp-x86_64.AppImage --check-runtime
-./dist/StreamingApp-x86_64.AppImage
 ```
 
-Senza FUSE:
+The script downloads its packaging tools on first use, builds in Release,
+and bundles Qt/FFmpeg and GStreamer. Use the matching artifact name for aarch64.
+If FUSE is unavailable:
 
 ```sh
 APPIMAGE_EXTRACT_AND_RUN=1 ./dist/StreamingApp-x86_64.AppImage
 ```
 
-### Compatibilità Linux
+Recipients still need desktop audio services, graphics drivers, and a
+ScreenCast portal with PipeWire on Wayland. Check `dist/build-info.json`
+for the required glibc version: an AppImage built on a newer distribution
+may not run on an older one. Build on the oldest distribution you plan to support.
 
-Un’AppImage non rende automaticamente compatibili binari costruiti su una
-distribuzione più recente. Lo script scrive in `dist/build-info.json` la
-versione minima **glibc** effettivamente richiesta dagli ELF inclusi, le
-versioni Qt/GStreamer e gli hash degli strumenti. Lo SHA-256 dell’AppImage è
-nel file `.AppImage.sha256` adiacente.
+## Windows ZIP
 
-Per supportare Linux meno recenti, esegui **compilazione e packaging** in una
-VM/container basata sulla distribuzione più vecchia da supportare, con
-Qt >= 6.5 e le dipendenze richieste. Non basta spostare in quel container il
-binario compilato su Arch. Prima di distribuire, prova su un PC/VM pulito:
-avvio, creazione/accesso stanza, cattura, audio, fullscreen e stop dal portale.
-`--check-runtime` controlla il caricamento dei plugin; non sostituisce la
-prova di cattura sul desktop.
-
-Riferimenti: [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy),
-[plugin Qt](https://github.com/linuxdeploy/linuxdeploy-plugin-qt),
-[compatibilità AppImage](https://docs.appimage.org/reference/best-practices.html),
-[percorsi GStreamer](https://gstreamer.freedesktop.org/documentation/gstreamer/running.html).
-
-## Creare il pacchetto Windows
-
-L’AppImage è solo per Linux. Su Windows usa Visual Studio 2022, CMake/Ninja,
-pkgconf, un kit Qt MSVC x64 e GStreamer **MSVC x86_64 runtime + development**
-con tutti i plugin. Apri Developer PowerShell for VS 2022:
+Use Developer PowerShell for Visual Studio 2022, with Qt and GStreamer
+MSVC x64 runtime/development kits. Adjust these paths:
 
 ```powershell
 ./scripts/package-windows.ps1 -QtDir 'C:\Qt\6.11.2\msvc2022_64' -GstDir 'C:\gstreamer\1.0\msvc_x86_64'
 ```
 
-Lo script compila in Release e usa `windeployqt` per Qt, FFmpeg e i plugin TLS;
-aggiunge DLL GStreamer, plugin, scanner e risorse runtime. Copia inoltre le
-DLL redistribuibili MSVC accanto agli eseguibili: sul PC destinatario non
-occorre installare Qt, GStreamer o Visual C++ Redistributable. Il risultato è
-`dist/StreamingApp-windows-x64.zip`. Con `-SkipBuild -BuildDir percorso` puoi
-impacchettare una build già pronta con gli stessi kit.
+The script builds in Release, bundles Qt/FFmpeg, GStreamer, and the MSVC runtime,
+and checks the bundled runtime before creating `dist/StreamingApp-windows-x64.zip`.
+If the MSVC runtime is not found, pass `-VcRedistDir` with the directory containing
+`x64/Microsoft.VC143.CRT`.
 
-Il destinatario deve estrarre l’intero ZIP: **il solo `.exe` non basta**.
-Può aprire direttamente `streaming_app.exe` oppure `Avvia StreamingApp.cmd`.
-L’audio del PC viene catturato con WASAPI, già presente in Windows;
-PulseAudio, PipeWire e `pactl` sono usati soltanto dalla versione Linux.
+Recipients must extract the entire ZIP and open `streaming_app.exe`.
+The executable alone is not enough. Build and validate this package on Windows.
 
-Il runtime MSVC viene cercato in `VCToolsRedistDir` della Developer PowerShell.
-Se necessario specifica `-VcRedistDir 'C:\percorso\VC\Redist\MSVC\14.xx.xxxxx'`,
-cioè la directory che contiene `x64\Microsoft.VC143.CRT`.
+## Share and verify
 
-Prima di creare gli ZIP, lo script esegue `--check-runtime` sui due eseguibili
-distribuiti, con un PATH limitato al pacchetto e a Windows, e una cache
-GStreamer temporanea. Il client verifica TLS, il caricamento del backend
-Qt FFmpeg e la creazione dei plugin richiesti, compresi `nicesrc`, `nicesink`,
-H.264, Opus e WASAPI. Se manca un componente, il packaging fallisce:
-completa il kit sulla macchina di build e ripeti il comando.
+Send the AppImage or complete Windows ZIP, plus a room invitation. Recipients
+paste the invitation into the app; they do not need source code, build tools,
+or the server token. Run the [signaling server](server/README.md) on one
+machine reachable by both clients.
 
-Il controllo può essere ripetuto dopo aver spostato o estratto il pacchetto:
+Before sharing a package, test it on a clean target machine: startup, WSS
+connection, joining a room, screen/audio capture, and playback.
+`--check-runtime` checks dependencies, not desktop capture or network reachability.
 
-```powershell
-.\dist\StreamingApp-windows-x64\check-windows-runtime.ps1
-.\dist\StreamingApp-signaling-windows-x64\check-windows-runtime.ps1 -Server
-```
-
-Questo script va eseguito e collaudato su Windows; non produce un installer
-firmato. La verifica runtime non sostituisce la prova su un PC Windows pulito
-di connessione WSS, cattura schermo e audio; non controlla i driver e la rete.
-La build Windows non è verificabile dal solo ambiente Linux.
-[Documentazione windeployqt](https://doc.qt.io/qt-6/windows-deployment.html).
-[Distribuzione locale del runtime MSVC](https://learn.microsoft.com/en-us/cpp/windows/determining-which-dlls-to-redistribute?view=msvc-170).
-
-Le librerie incluse mantengono le rispettive licenze. Per pubblicare i
-pacchetti conserva gli avvisi e i sorgenti corrispondenti alle versioni
-redistribuite; H.264/x264 e altri componenti possono avere licenze diverse.
+Packages do not include your local settings or invitations. Preserve the
+license notices and meet the redistribution requirements of bundled libraries.

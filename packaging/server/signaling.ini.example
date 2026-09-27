@@ -1,0 +1,27 @@
+# Copy outside the repository and edit the domain and paths.
+# Start with: ./build/signaling_server --config /path/to/signaling.ini
+# Relative paths are resolved against this file's directory.
+server-url=wss://stream.example.com:8443
+token-file=token
+# Alternatively, remove token-file and specify the token directly:
+# token=REPLACE_WITH_A_RANDOM_TOKEN_OF_AT_LEAST_16_CHARACTERS
+# Protect this INI with chmod 600 when it contains the token.
+cert=fullchain.pem
+key=privkey.pem
+
+# The server generates a private turnserver.conf and a new TURN secret at startup.
+# The DNS A record must point directly to your current public IPv4.
+# After an IP change, update DDNS and restart signaling; recreate the room.
+# turn-port=3478
+# turn-min-port=49160
+# turn-max-port=49260
+# turn-relay-ip=192.168.1.10
+# turn-executable=/usr/bin/turnserver
+
+# Optional local signaling port override (defaults to the port in server-url).
+# port=8443
+
+# Manual TURN: remove server-url above and set these instead.
+# port=8443
+# turn-config=turnserver.conf
+# turn-url=turn://stream.example.com:3478?transport=udp, turn://stream.example.com:3478?transport=tcp
