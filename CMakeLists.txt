@@ -20,7 +20,8 @@ target_link_libraries(video_pipeline PUBLIC Qt6::Multimedia PkgConfig::GSTREAMER
 
 add_library(streaming_network src/network/WebRtcPeer.cpp src/network/WebRtcPeer.h
     src/network/RoomClient.cpp src/network/RoomClient.h
-    src/network/SignalingServer.cpp src/network/SignalingServer.h)
+    src/network/SignalingServer.cpp src/network/SignalingServer.h
+    src/network/TurnService.cpp src/network/TurnService.h)
 target_compile_definitions(streaming_network PRIVATE GST_USE_UNSTABLE_API)
 target_include_directories(streaming_network PUBLIC src/network)
 target_link_libraries(streaming_network PUBLIC video_pipeline Qt6::Network Qt6::WebSockets)
@@ -65,11 +66,18 @@ set_target_properties(streaming_app PROPERTIES WIN32_EXECUTABLE TRUE)
 
 include(CTest)
 if(BUILD_TESTING)
+    qt_add_executable(turn_service_test tests/TurnServiceTest.cpp)
+    target_link_libraries(turn_service_test PRIVATE streaming_network)
+    add_test(NAME turn_credentials_and_config COMMAND turn_service_test)
+    set_tests_properties(turn_credentials_and_config PROPERTIES TIMEOUT 10)
     qt_add_executable(webrtc_test tests/WebRtcTest.cpp)
     target_link_libraries(webrtc_test PRIVATE streaming_network)
     qt_add_executable(room_test tests/RoomTest.cpp)
     target_link_libraries(room_test PRIVATE streaming_network)
     add_test(NAME room_invitation_and_handoff COMMAND room_test)
+    add_test(NAME room_turn_udp COMMAND room_test --turn)
+    add_test(NAME room_turn_tcp COMMAND room_test --turn-tcp)
+    set_tests_properties(room_turn_udp room_turn_tcp PROPERTIES RESOURCE_LOCK coturn_ports)
     qt_add_executable(mainwindow_test tests/MainWindowTest.cpp src/MainWindow.cpp src/MainWindow.h
         src/ScreenCaptureController.cpp src/ScreenCaptureController.h)
     target_include_directories(mainwindow_test PRIVATE src)
@@ -92,7 +100,7 @@ if(BUILD_TESTING)
     set_tests_properties(fullscreen_native_surface saved_server_key PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME webrtc_loopback COMMAND webrtc_test)
     add_test(NAME webrtc_audio_loopback COMMAND webrtc_test --audio)
-    set_tests_properties(webrtc_loopback webrtc_audio_loopback room_invitation_and_handoff PROPERTIES TIMEOUT 45 ENVIRONMENT
+    set_tests_properties(webrtc_loopback webrtc_audio_loopback room_invitation_and_handoff room_turn_udp room_turn_tcp PROPERTIES TIMEOUT 45 ENVIRONMENT
         "QT_QPA_PLATFORM=offscreen;GST_PLUGIN_PATH_1_0=${CMAKE_CURRENT_SOURCE_DIR}/.local/gstreamer-1.0"
         SKIP_RETURN_CODE 77)
     qt_add_executable(video_pipeline_test tests/VideoPipelineTest.cpp)

@@ -1,5 +1,6 @@
 #include "RoomClient.h"
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QFile>
 #include <QSslConfiguration>
 #include <QSslCertificate>
@@ -133,7 +134,17 @@ void RoomClient::receive(const QString& text) {
         const VideoSettings video{settings.value("fps").toInt(), {settings.value("width").toInt(), settings.value("height").toInt()}, settings.value("bitrate").toInt()};
         QString error;
         m_sessionAudio = message.value("audio").toBool();
-        if (!m_peer.start(m_sender, m_ice, WebRtcPeer::AudioConfig{m_sessionAudio}, error)) { stopSharing(); emit errorOccurred(error); return; }
+        auto ice = m_ice;
+        // A manually configured TURN is an explicit override. Otherwise use
+        // fresh credentials for this session; never persist them across rooms.
+        if (ice.turn.isEmpty()) {
+            const auto servers = message.value("turnServers").toArray();
+            if (servers.size() > 8) {
+                stopSharing(); emit errorOccurred(tr("Troppi server TURN ricevuti dal signaling.")); return;
+            }
+            for (const auto& server : servers) ice.turnServers.append(server.toString());
+        }
+        if (!m_peer.start(m_sender, ice, WebRtcPeer::AudioConfig{m_sessionAudio}, error)) { stopSharing(); emit errorOccurred(error); return; }
         m_timeout.start(); emit changed();
         emit statusChanged(tr("Collegamento WebRTC · %1p · %2 FPS · %3 Mbit/s")
                            .arg(video.maxSize.height()).arg(video.fps).arg(video.bitrateKbps / 1000));

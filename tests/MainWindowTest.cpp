@@ -17,6 +17,9 @@ int main(int argc, char** argv) {
     QTemporaryDir config;
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, config.path());
+    // The organization/application constructor uses NativeFormat regardless of
+    // setDefaultFormat. Isolate that format too, away from real user settings.
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config.path());
     if (app.arguments().contains("--settings")) {
         const QString key = QStringLiteral("test-key-for-local-settings-only");
         {

@@ -4,6 +4,7 @@
 #include <QTimer>
 #include <QUuid>
 #include <QRandomGenerator>
+#include <QDateTime>
 #include <algorithm>
 
 namespace {
@@ -184,6 +185,7 @@ void SignalingServer::handle(QWebSocket *socket, const QString &text) {
                           {"session", room.session},
                           {"sender", member == socket},
                           {"audio", message.value("audio").toBool(false)},
+                          {"turnServers", m_turn ? m_turn->credentials(m_clients[member].id, QDateTime::currentSecsSinceEpoch()) : QJsonArray{}},
                           {"settings", settings}});
         presence(room);
         return;

@@ -1,0 +1,32 @@
+# Copy outside the repository; chmod 600. Used by signaling_server --turn-config.
+# Install coturn on this same machine. Do not also start the system coturn service.
+listening-port=3478
+listening-ip=0.0.0.0
+# Behind NAT, uncomment and replace BOTH addresses (the public IP must be reachable):
+# relay-ip=192.168.1.10
+# external-ip=203.0.113.10/192.168.1.10
+min-port=49160
+max-port=49260
+
+realm=screen-streaming
+fingerprint
+use-auth-secret
+# Replace the entire placeholder with the output of: openssl rand -hex 32
+static-auth-secret=REPLACE_WITH_64_HEX_DIGITS
+stale-nonce=600
+user-quota=12
+total-quota=128
+relay-threads=2
+
+# Media remain encrypted with DTLS-SRTP through this relay.
+# UDP and TCP clients are enabled on 3478; RFC 6062 TCP relays are unnecessary.
+no-tcp-relay
+no-tls
+no-dtls
+no-cli
+no-multicast-peers
+# Do not enable allow-loopback-peers on an Internet-facing deployment.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+# Do not block the server's own relay IP: two relayed clients must reach each other.
+# Use absolute paths for any TLS certificates or other file references you add.

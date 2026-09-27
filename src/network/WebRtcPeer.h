@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QTimer>
 #include <QVideoFrame>
+#include <QStringList>
 #include <memory>
 
 // One WebRTC connection. Qt owns signaling; GStreamer owns ICE/DTLS/SRTP.
@@ -12,7 +13,7 @@ class WebRtcPeer final : public QObject
 {
     Q_OBJECT
 public:
-    struct IceConfig { QString stun; QString turn; bool relayOnly = false; };
+    struct IceConfig { QString stun; QString turn; bool relayOnly = false; QStringList turnServers = {}; };
     struct AudioConfig {
         bool enabled = false;
         // Explicit synthetic endpoints for integration tests, never selected by the UI.

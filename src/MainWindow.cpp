@@ -149,7 +149,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     auto* advancedForm = new QFormLayout(advanced);
     m_stunServer = new QLineEdit(QStringLiteral("stun://stun.l.google.com:19302"), advanced);
     m_turnServer = new QLineEdit(advanced);
-    m_turnServer->setPlaceholderText(tr("turn://utente:password@host:3478"));
+    m_turnServer->setPlaceholderText(tr("Automatico dal server (oppure turn://utente:password@host:3478)"));
+    m_turnServer->setToolTip(tr("Lascia vuoto per usare il TURN fornito dal signaling. Un indirizzo manuale sostituisce la configurazione automatica."));
     m_turnServer->setEchoMode(QLineEdit::Password);
     m_relayOnly = new QCheckBox(tr("Usa solo TURN"), advanced);
     advancedForm->addRow(tr("STUN"), m_stunServer);

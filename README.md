@@ -289,6 +289,11 @@ La chiave privata deve corrispondere al certificato del server.
 Con Certbot usa `--cert /percorso/live/dominio/fullchain.pem` e
 `--key /percorso/live/dominio/privkey.pem`, così il server invia anche gli intermedi.
 
+Per condividere tra reti diverse puoi **avviare coturn insieme al signaling**
+con `--turn-config` e `--turn-url`. I client ricevono automaticamente credenziali
+temporanee: lascia vuoto il campo TURN. Vedi la [guida server TURN](packaging/server/README.md)
+per il comando completo, le porte firewall, NAT e la prova con **Usa solo TURN**.
+
 Nel client inserisci `wss://nome-host:8443`. Il certificato deve essere
 attendibile dal sistema. WebRTC prova i candidate ICE diretti. Nei campi STUN e
 TURN della finestra puoi aggiungere i server necessari per reti con NAT o

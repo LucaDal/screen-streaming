@@ -227,10 +227,13 @@ bool WebRtcPeer::start(bool sender, const IceConfig &ice, const AudioConfig &aud
     if (!ice.stun.isEmpty())
         g_object_set(m_rtc, "stun-server", ice.stun.toUtf8().constData(),
                      nullptr);
-    if (!ice.turn.isEmpty()) {
+    auto turnServers = ice.turnServers;
+    if (!ice.turn.isEmpty()) turnServers.prepend(ice.turn);
+    turnServers.removeDuplicates();
+    for (const auto& turn : turnServers) {
         gboolean accepted = FALSE;
         g_signal_emit_by_name(m_rtc, "add-turn-server",
-                              ice.turn.toUtf8().constData(), &accepted);
+                              turn.toUtf8().constData(), &accepted);
         if (!accepted) {
             error = tr("Indirizzo TURN non valido.");
             stop();
@@ -238,7 +241,7 @@ bool WebRtcPeer::start(bool sender, const IceConfig &ice, const AudioConfig &aud
         }
     }
     if (ice.relayOnly) {
-        if (ice.turn.isEmpty()) {
+        if (turnServers.isEmpty()) {
             error = tr("La modalità relay richiede un server TURN.");
             stop();
             return false;

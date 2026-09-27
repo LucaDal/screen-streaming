@@ -7,6 +7,7 @@
 #include <QWebSocketServer>
 #include <QWebSocket>
 #include <QElapsedTimer>
+#include "TurnService.h"
 
 class SignalingServer final : public QObject
 {
@@ -18,11 +19,13 @@ public:
     quint16 port() const { return m_server.serverPort(); }
     QString errorString() const { return m_server.errorString(); }
     void setSslConfiguration(const QSslConfiguration& config) { m_server.setSslConfiguration(config); }
+    void setTurnService(TurnService* service) { m_turn = service; }
 private:
     struct Client { QString id; QString room; QJsonObject preferences; QElapsedTimer rate; int messages = 0; };
     struct Room { QString key; QList<QWebSocket*> members; QWebSocket* publisher = nullptr; QString session; };
     QWebSocketServer m_server;
     QString m_token;
+    TurnService* m_turn = nullptr; // Owned by server_main; outlives this server.
     QHash<QWebSocket*, Client> m_clients;
     QHash<QString, Room> m_rooms;
     void accept();
