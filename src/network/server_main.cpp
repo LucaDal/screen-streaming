@@ -11,10 +11,16 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     QCommandLineParser parser; parser.addHelpOption();
     parser.addOptions({{{"p", "port"}, "Porta", "port", "8443"},
+                       {"check-runtime", "Verifica il supporto TLS senza avviare il server"},
                        {"token-file", "File con chiave per creare stanze (almeno 16 caratteri)", "path"},
-                       {"cert", "Certificato TLS PEM", "path"}, {"key", "Chiave privata RSA PEM", "path"},
+                       {"cert", "Certificato TLS PEM", "path"}, {"key", "Chiave privata PEM (RSA o EC, senza passphrase)", "path"},
                        {"insecure-local", "Solo test sullo stesso computer: WS su 127.0.0.1"}});
     parser.process(app);
+    if (parser.isSet("check-runtime")) {
+        if (!QSslSocket::supportsSsl()) { qCritical("Supporto TLS non disponibile in Qt."); return 1; }
+        QTextStream(stdout) << "Runtime TLS disponibile.\n";
+        return 0;
+    }
     QFile tokenFile(parser.value("token-file"));
     if (!tokenFile.open(QIODevice::ReadOnly)) { qCritical("Serve --token-file."); return 1; }
     const QString token = QString::fromUtf8(tokenFile.readAll()).trimmed();
@@ -24,11 +30,16 @@ int main(int argc, char** argv) {
     const bool local = parser.isSet("insecure-local");
     SignalingServer server(token, local ? QWebSocketServer::NonSecureMode : QWebSocketServer::SecureMode);
     if (!local) {
+        if (!QSslSocket::supportsSsl()) { qCritical("Supporto TLS non disponibile in Qt."); return 1; }
         QFile certFile(parser.value("cert")), keyFile(parser.value("key"));
         if (!certFile.open(QIODevice::ReadOnly) || !keyFile.open(QIODevice::ReadOnly)) { qCritical("Per WSS servono --cert e --key."); return 1; }
         const auto chain = QSslCertificate::fromData(certFile.readAll());
-        const QSslKey key(keyFile.readAll(), QSsl::Rsa);
-        if (chain.isEmpty() || key.isNull() || !QSslSocket::supportsSsl()) { qCritical("Configurazione TLS non valida."); return 1; }
+        if (chain.isEmpty()) { qCritical("Il file --cert non contiene un certificato PEM valido."); return 1; }
+        // The leaf certificate and its private key must use the same algorithm.
+        const auto publicKey = chain.first().publicKey();
+        if (publicKey.isNull()) { qCritical("Chiave pubblica del certificato TLS non supportata."); return 1; }
+        const QSslKey key(keyFile.readAll(), publicKey.algorithm(), QSsl::Pem, QSsl::PrivateKey);
+        if (key.isNull()) { qCritical("Chiave privata TLS non valida: serve un PEM senza passphrase con lo stesso algoritmo del certificato."); return 1; }
         auto config = QSslConfiguration::defaultConfiguration();
         config.setLocalCertificateChain(chain); config.setPrivateKey(key);
         config.setPeerVerifyMode(QSslSocket::VerifyNone); // Clients authenticate using the room token.

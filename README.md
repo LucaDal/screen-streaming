@@ -40,15 +40,97 @@ Registrazione e accelerazione hardware non sono ancora incluse. Il codec video �
 
 Con Qt Online Installer seleziona anche Qt Multimedia e un kit compatibile
 con il compilatore. Su Linux puoi usare i pacchetti della distribuzione se
-forniscono le versioni richieste. Verifica i codec con:
+forniscono le versioni richieste.
+
+## Plugin e dipendenze runtime su Linux
+
+Per eseguire il client compilato localmente servono i seguenti componenti
+GStreamer, sia sul PC che condivide sia su quello che riceve. I comandi sotto
+installano il runtime multimediale; restano necessari Qt 6.5+ e il backend
+FFmpeg di Qt Multimedia indicati nei requisiti. Per compilare servono anche
+compilatore, CMake e i pacchetti di sviluppo.
+
+| Funzione / elementi GStreamer | Arch Linux / EndeavourOS | Debian / Ubuntu |
+| --- | --- | --- |
+| Runtime, `valve`, strumenti `gst-inspect-1.0` e `gst-launch-1.0` | `gstreamer` | `gstreamer1.0-tools` |
+| `appsrc`, `appsink`, `videoconvert`, `audioconvert`, `audioresample`, `volume`, `opusenc`, `opusdec` | `gst-plugins-base` | `gstreamer1.0-plugins-base` |
+| RTP: `rtpbin`, `rtph264pay`, `rtph264depay`, `rtpopuspay`, `rtpopusdepay` | `gst-plugins-good` | `gstreamer1.0-plugins-good` |
+| WebRTC, parsing H.264 e cifratura: `webrtcbin`, `h264parse`, `dtlssrtpenc`, `dtlssrtpdec`, `srtpenc`, `srtpdec` | `gst-plugins-bad` | `gstreamer1.0-plugins-bad` |
+| Codifica H.264: `x264enc` | `gst-plugins-ugly` | `gstreamer1.0-plugins-ugly` |
+| Decodifica H.264: `avdec_h264` | `gst-libav` | `gstreamer1.0-libav` |
+| Connessioni ICE: `nicesrc`, `nicesink` | `libnice` | `gstreamer1.0-nice` |
+| Cattura e riproduzione audio: `pulsesrc`, `pulsesink` | `gst-plugins-good` | `gstreamer1.0-pulseaudio` (nelle versioni recenti incluso in `gstreamer1.0-plugins-good`) |
+| Comando `pactl` per trovare il monitor dell’uscita audio | `libpulse` | `pulseaudio-utils` |
+
+### Arch Linux / EndeavourOS
 
 ```sh
-gst-inspect-1.0 x264enc
-gst-inspect-1.0 h264parse
-gst-inspect-1.0 avdec_h264
-gst-inspect-1.0 webrtcbin
-gst-inspect-1.0 rtph264pay
+sudo pacman -S --needed \
+  gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad \
+  gst-plugins-ugly gst-libav libnice libpulse
 ```
+
+### Debian / Ubuntu
+
+```sh
+sudo apt update
+sudo apt install \
+  gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
+  gstreamer1.0-nice gstreamer1.0-pulseaudio pulseaudio-utils
+```
+
+Su Ubuntu alcuni pacchetti sono nel repository `universe`, che deve essere
+abilitato. Installare soltanto `ffmpeg` o le librerie di sviluppo GStreamer
+non installa tutti gli elementi elencati.
+
+### Servizi audio e cattura Wayland
+
+Per **Audio del PC** deve essere attivo un server PulseAudio oppure PipeWire
+con il servizio di compatibilità `pipewire-pulse`. Il plugin `pulsesrc`
+funziona in entrambi i casi. Su un desktop che usa PipeWire, i pacchetti
+coinvolti sono `pipewire`, `pipewire-pulse` e il gestore di sessione
+`wireplumber`; se l’audio funziona già con PulseAudio, non occorre sostituirlo.
+`pactl` da solo non avvia né sostituisce il server audio.
+
+Su **Wayland** servono inoltre `xdg-desktop-portal` e il backend ScreenCast
+del proprio desktop: per esempio `xdg-desktop-portal-kde` su KDE Plasma,
+`xdg-desktop-portal-gnome` su GNOME o `xdg-desktop-portal-wlr` sui compositor
+wlroots compatibili. Installa quello adatto alla tua sessione. Il backend
+GTK da solo non fornisce la cattura dello schermo.
+
+### Verifica prima dell’avvio
+
+Il client può controllare TLS e i plugin senza aprire la finestra:
+
+```sh
+./build/streaming_app --check-runtime
+```
+
+Per controllare un elemento specifico e l’accesso al server audio, esegui
+dal terminale della sessione desktop, senza `sudo`:
+
+```sh
+gst-inspect-1.0 nicesrc
+gst-inspect-1.0 rtpbin
+gst-inspect-1.0 pulsesrc
+pactl get-default-sink
+pactl --format=json list sinks
+```
+
+Il controllo runtime verifica i plugin; i comandi `pactl` verificano anche
+che il servizio audio sia raggiungibile e che esista un’uscita con monitor.
+Dopo aver installato un plugin, riavvia il client.
+
+L’**AppImage** include già Qt, i plugin GStreamer e `pactl`: sul PC destinatario
+restano necessari i servizi audio, PipeWire/portale su Wayland e i driver.
+Per verificare il contenuto usa `./StreamingApp-x86_64.AppImage --check-runtime`;
+vedi la [guida alla distribuzione](packaging/DISTRIBUTION.md).
+
+Riferimenti: [GStreamer su Arch](https://wiki.archlinux.org/title/GStreamer),
+[libpulse e pactl su Arch](https://archlinux.org/packages/extra/x86_64/libpulse/files/),
+[plugin PulseAudio su Ubuntu](https://packages.ubuntu.com/noble/gstreamer1.0-pulseaudio),
+[plugin libnice](https://wiki.freedesktop.org/nice/GStreamer/).
 
 ## Compilazione su Linux
 
@@ -110,6 +192,10 @@ Invia il file AppImage ai PC Linux compatibili oppure lo ZIP completo ai PC
 Windows, insieme all’invito della stanza. Il signaling resta su un server
 raggiungibile da entrambi. La cartella `dist/` contiene gli artefatti e gli
 hash; non include chiavi o impostazioni personali.
+Lo ZIP Windows include Qt/FFmpeg, GStreamer con i plugin audio/video/WebRTC
+e le DLL del runtime Visual C++: chi lo riceve estrae tutto e avvia
+`streaming_app.exe`, senza installare dipendenze. Lo script verifica il runtime
+distribuito prima di creare lo ZIP e si ferma se manca un componente.
 
 Vedi [guida alla distribuzione](packaging/DISTRIBUTION.md) per requisiti,
 compatibilità glibc, verifica dei plugin e istruzioni per il destinatario.
@@ -195,6 +281,13 @@ certificato e una chiave:
 ./build/signaling_server --port 8443 --token-file /percorso/token \
   --cert /percorso/cert.pem --key /percorso/key.pem
 ```
+
+Sono supportate chiavi private RSA ed EC in formato PEM senza passphrase.
+Il server ricava l'algoritmo dal primo certificato di `--cert`: se il file
+contiene una catena, metti prima il certificato del server e poi gli intermedi.
+La chiave privata deve corrispondere al certificato del server.
+Con Certbot usa `--cert /percorso/live/dominio/fullchain.pem` e
+`--key /percorso/live/dominio/privkey.pem`, così il server invia anche gli intermedi.
 
 Nel client inserisci `wss://nome-host:8443`. Il certificato deve essere
 attendibile dal sistema. WebRTC prova i candidate ICE diretti. Nei campi STUN e

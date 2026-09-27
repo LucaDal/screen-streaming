@@ -101,19 +101,42 @@ con tutti i plugin. Apri Developer PowerShell for VS 2022:
 ./scripts/package-windows.ps1 -QtDir 'C:\Qt\6.11.2\msvc2022_64' -GstDir 'C:\gstreamer\1.0\msvc_x86_64'
 ```
 
-Lo script compila in Release e usa `windeployqt` per Qt e il runtime MSVC;
-aggiunge DLL GStreamer, plugin, scanner e risorse runtime. Il risultato è
+Lo script compila in Release e usa `windeployqt` per Qt, FFmpeg e i plugin TLS;
+aggiunge DLL GStreamer, plugin, scanner e risorse runtime. Copia inoltre le
+DLL redistribuibili MSVC accanto agli eseguibili: sul PC destinatario non
+occorre installare Qt, GStreamer o Visual C++ Redistributable. Il risultato è
 `dist/StreamingApp-windows-x64.zip`. Con `-SkipBuild -BuildDir percorso` puoi
 impacchettare una build già pronta con gli stessi kit.
 
 Il destinatario deve estrarre l’intero ZIP: **il solo `.exe` non basta**.
-Se `windeployqt` include un installer del Visual C++ Redistributable anziché
-le DLL, eseguilo sul PC destinatario. Il file `Avvia StreamingApp.cmd` avvia
-con il PATH del pacchetto; l’app configura anche i propri percorsi GStreamer.
+Può aprire direttamente `streaming_app.exe` oppure `Avvia StreamingApp.cmd`.
+L’audio del PC viene catturato con WASAPI, già presente in Windows;
+PulseAudio, PipeWire e `pactl` sono usati soltanto dalla versione Linux.
+
+Il runtime MSVC viene cercato in `VCToolsRedistDir` della Developer PowerShell.
+Se necessario specifica `-VcRedistDir 'C:\percorso\VC\Redist\MSVC\14.xx.xxxxx'`,
+cioè la directory che contiene `x64\Microsoft.VC143.CRT`.
+
+Prima di creare gli ZIP, lo script esegue `--check-runtime` sui due eseguibili
+distribuiti, con un PATH limitato al pacchetto e a Windows, e una cache
+GStreamer temporanea. Il client verifica TLS, il caricamento del backend
+Qt FFmpeg e la creazione dei plugin richiesti, compresi `nicesrc`, `nicesink`,
+H.264, Opus e WASAPI. Se manca un componente, il packaging fallisce:
+completa il kit sulla macchina di build e ripeti il comando.
+
+Il controllo può essere ripetuto dopo aver spostato o estratto il pacchetto:
+
+```powershell
+.\dist\StreamingApp-windows-x64\check-windows-runtime.ps1
+.\dist\StreamingApp-signaling-windows-x64\check-windows-runtime.ps1 -Server
+```
 
 Questo script va eseguito e collaudato su Windows; non produce un installer
-firmato e la build Windows non è verificabile dal solo ambiente Linux.
+firmato. La verifica runtime non sostituisce la prova su un PC Windows pulito
+di connessione WSS, cattura schermo e audio; non controlla i driver e la rete.
+La build Windows non è verificabile dal solo ambiente Linux.
 [Documentazione windeployqt](https://doc.qt.io/qt-6/windows-deployment.html).
+[Distribuzione locale del runtime MSVC](https://learn.microsoft.com/en-us/cpp/windows/determining-which-dlls-to-redistribute?view=msvc-170).
 
 Le librerie incluse mantengono le rispettive licenze. Per pubblicare i
 pacchetti conserva gli avvisi e i sorgenti corrispondenti alle versioni

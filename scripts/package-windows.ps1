@@ -2,6 +2,7 @@ param(
     [string]$QtDir = "C:\Qt\6.11.2\msvc2022_64",
     [string]$GstDir = "C:\gstreamer\1.0\msvc_x86_64",
     [string]$BuildDir = "",
+    [string]$VcRedistDir = $env:VCToolsRedistDir,
     [switch]$SkipBuild,
     [switch]$Clean,
     [switch]$Run
@@ -82,6 +83,27 @@ Il percorso di cl.exe deve terminare, ad esempio, in Hostx64\x64\cl.exe
 }
 
 Write-Host "MSVC      : $clPath" -ForegroundColor Green
+
+# App-local CRT: il destinatario non deve eseguire vc_redist.x64.exe.
+if (-not $VcRedistDir -and $env:VCINSTALLDIR) {
+    $redistRoot = Join-Path $env:VCINSTALLDIR "Redist\MSVC"
+    if (Test-Path $redistRoot) {
+        $latestRedist = Get-ChildItem $redistRoot -Directory |
+            Where-Object { $_.Name -match '^\d+(\.\d+)+$' } |
+            Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+        if ($latestRedist) { $VcRedistDir = $latestRedist.FullName }
+    }
+}
+if (-not $VcRedistDir) {
+    throw "Runtime MSVC redistribuibile non trovato. Usa -VcRedistDir con la directory Redist\MSVC\<versione> di Visual Studio."
+}
+Assert-Exists $VcRedistDir "Directory runtime MSVC non trovata."
+$crtDir = Get-ChildItem (Join-Path $VcRedistDir "x64") -Directory -Filter "Microsoft.VC*.CRT" |
+    Select-Object -First 1
+if (-not $crtDir) { throw "Runtime CRT x64 non trovato in $VcRedistDir. Installa i componenti C++ di Visual Studio." }
+foreach ($name in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
+    Assert-Exists (Join-Path $crtDir.FullName $name) "Runtime CRT x64 incompleto."
+}
 
 # -----------------------------------------------------------------------------
 # Qt
@@ -220,10 +242,10 @@ New-Item -ItemType File -Force $serverMarker | Out-Null
 Copy-Item $serverBinary (Join-Path $serverStage "signaling_server.exe")
 
 Write-Host "`nDeploy Qt..." -ForegroundColor Cyan
-Invoke-Checked $windeployqt "--release" "--compiler-runtime" "--dir" $stage (Join-Path $stage "streaming_app.exe")
+Invoke-Checked $windeployqt "--release" "--no-compiler-runtime" "--dir" $stage (Join-Path $stage "streaming_app.exe")
 
 Write-Host "Deploy Qt signaling server..." -ForegroundColor Cyan
-Invoke-Checked $windeployqt "--release" "--compiler-runtime" "--dir" $serverStage (Join-Path $serverStage "signaling_server.exe")
+Invoke-Checked $windeployqt "--release" "--no-compiler-runtime" "--dir" $serverStage (Join-Path $serverStage "signaling_server.exe")
 
 # GStreamer non viene distribuito da windeployqt.
 Write-Host "Deploy GStreamer..." -ForegroundColor Cyan
@@ -233,6 +255,23 @@ if (-not $dlls) {
 }
 $dlls | Copy-Item -Destination $stage
 $dlls | Copy-Item -Destination $serverStage
+
+foreach ($destination in @($stage, $serverStage)) {
+    foreach ($dll in (Get-ChildItem $crtDir.FullName -Filter *.dll)) {
+        $target = Join-Path $destination $dll.Name
+        # GStreamer puo' includere un CRT piu' recente: non retrocederlo.
+        if (Test-Path $target) {
+            $oldVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($target)
+            $newVersion = $dll.VersionInfo
+            $oldNumber = [version]::new($oldVersion.FileMajorPart, $oldVersion.FileMinorPart, $oldVersion.FileBuildPart, $oldVersion.FilePrivatePart)
+            $newNumber = [version]::new($newVersion.FileMajorPart, $newVersion.FileMinorPart, $newVersion.FileBuildPart, $newVersion.FilePrivatePart)
+            if ($oldNumber -gt $newNumber) { continue }
+        }
+        Copy-Item $dll.FullName $target -Force
+    }
+    Set-Content -Path (Join-Path $destination "qt.conf") -Value "[Paths]`nPrefix=.`nPlugins=." -Encoding ASCII
+    Copy-Item (Join-Path $PSScriptRoot "check-windows-runtime.ps1") $destination
+}
 
 $gstPluginsSource = Join-Path $GstDir "lib\gstreamer-1.0"
 Assert-Exists $gstPluginsSource "Directory plugin GStreamer non trovata."
@@ -340,7 +379,7 @@ set "PATH=%~dp0;%PATH%"
 set "GST_PLUGIN_PATH_1_0=%~dp0gstreamer-1.0"
 if not exist "%~dp0streaming-token.txt" (
   echo ERRORE: streaming-token.txt non trovato.
-  echo Leggi COME-AVVIARE-SIGNALING.txt per creare il token.
+  echo Leggi Readme.txt per creare il token.
   pause
   exit /b 1
 )
@@ -348,6 +387,12 @@ if not exist "%~dp0streaming-token.txt" (
 endlocal
 '@
 Set-Content -Path (Join-Path $serverStage "Avvia Signaling Locale.cmd") -Value $serverLauncher -Encoding ASCII
+
+# Verifica i file effettivamente distribuiti, senza PATH o cache dello sviluppatore.
+# Un kit GStreamer incompleto (per esempio senza libnice) deve fermare il packaging.
+Write-Host "`nVerifica runtime del client e del server..." -ForegroundColor Cyan
+& (Join-Path $stage "check-windows-runtime.ps1") -PackageDir $stage
+& (Join-Path $serverStage "check-windows-runtime.ps1") -PackageDir $serverStage -Server
 
 # -----------------------------------------------------------------------------
 # ZIP + hash
@@ -377,7 +422,7 @@ Write-Host "Server cartella : $serverStage"
 Write-Host "Server ZIP      : $serverZip"
 Write-Host "Server SHA256   : $serverZip.sha256"
 Write-Host "`nClient: usa 'Avvia StreamingApp.cmd' oppure streaming_app.exe."
-Write-Host "Server: leggi 'COME-AVVIARE-SIGNALING.txt' nella cartella del signaling."
+Write-Host "Server: leggi 'Readme.txt' nella cartella del signaling."
 
 if ($Run) {
     Write-Host "`nAvvio StreamingApp..." -ForegroundColor Cyan

@@ -137,21 +137,33 @@ bool WebRtcPeer::start(bool sender, const IceConfig &ice, const AudioConfig &aud
 #elif defined(Q_OS_LINUX)
             // Resolve the output's monitor explicitly: never fall back to a microphone.
             QProcess pactl;
-            pactl.start(QStringLiteral("pactl"), {QStringLiteral("get-default-sink")});
-            if (!pactl.waitForFinished(2000) || pactl.exitCode() != 0) {
-                error = tr("Audio di sistema non disponibile: verifica pactl e PulseAudio/PipeWire, oppure disattiva Audio del PC.");
+            auto runPactl = [&](const QStringList& arguments) {
+                pactl.start(QStringLiteral("pactl"), arguments);
+                QString detail;
+                if (!pactl.waitForStarted(2000)) {
+                    detail = tr("Impossibile avviare pactl: %1").arg(pactl.errorString());
+                } else if (!pactl.waitForFinished(2000)) {
+                    detail = tr("pactl non risponde: %1").arg(pactl.errorString());
+                    pactl.kill();
+                    pactl.waitForFinished(1000);
+                } else if (pactl.exitStatus() != QProcess::NormalExit || pactl.exitCode() != 0) {
+                    detail = QString::fromUtf8(pactl.readAllStandardError()).trimmed().left(1000);
+                    if (detail.isEmpty()) detail = tr("pactl terminato con errore (codice %1).").arg(pactl.exitCode());
+                } else {
+                    return true;
+                }
+                error = tr("Audio di sistema non disponibile.\n%1\nVerifica pactl e PulseAudio/PipeWire nella sessione desktop, oppure disattiva Audio del PC.").arg(detail);
                 return false;
-            }
+            };
+            if (!runPactl({QStringLiteral("get-default-sink")})) return false;
             const QString defaultSink = QString::fromUtf8(pactl.readAllStandardOutput()).trimmed();
-            pactl.start(QStringLiteral("pactl"), {QStringLiteral("--format=json"), QStringLiteral("list"), QStringLiteral("sinks")});
-            if (pactl.waitForFinished(2000) && pactl.exitCode() == 0) {
-                const auto sinks = QJsonDocument::fromJson(pactl.readAllStandardOutput()).array();
-                for (const auto& sink : sinks) {
-                    const auto object = sink.toObject();
-                    if (object.value("name").toString() == defaultSink) {
-                        monitorDevice = object.value("monitor_source").toString();
-                        if (monitorDevice.isEmpty()) monitorDevice = object.value("monitor_source_name").toString();
-                    }
+            if (!runPactl({QStringLiteral("--format=json"), QStringLiteral("list"), QStringLiteral("sinks")})) return false;
+            const auto sinks = QJsonDocument::fromJson(pactl.readAllStandardOutput()).array();
+            for (const auto& sink : sinks) {
+                const auto object = sink.toObject();
+                if (object.value("name").toString() == defaultSink) {
+                    monitorDevice = object.value("monitor_source").toString();
+                    if (monitorDevice.isEmpty()) monitorDevice = object.value("monitor_source_name").toString();
                 }
             }
             if (monitorDevice.isEmpty()) {
