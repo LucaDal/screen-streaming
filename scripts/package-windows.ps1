@@ -247,6 +247,17 @@ Invoke-Checked $windeployqt "--release" "--no-compiler-runtime" "--dir" $stage (
 Write-Host "Deploy Qt signaling server..." -ForegroundColor Cyan
 Invoke-Checked $windeployqt "--release" "--no-compiler-runtime" "--dir" $serverStage (Join-Path $serverStage "signaling_server.exe")
 
+# windeployqt can omit OpenSSL when Schannel is available. The server needs
+# OpenSSL for reliable PEM private-key import, including Certbot EC keys.
+$opensslBackend = Join-Path $QtDir "plugins\tls\qopensslbackend.dll"
+Assert-Exists $opensslBackend "Backend TLS OpenSSL di Qt non trovato."
+$serverTlsDir = Join-Path $serverStage "tls"
+New-Item -ItemType Directory -Force $serverTlsDir | Out-Null
+Copy-Item $opensslBackend $serverTlsDir
+foreach ($name in @("libssl-3-x64.dll", "libcrypto-3-x64.dll")) {
+    Assert-Exists (Join-Path $gstBin $name) "Runtime OpenSSL 3 x64 non trovato in GStreamer."
+}
+
 # GStreamer non viene distribuito da windeployqt.
 Write-Host "Deploy GStreamer..." -ForegroundColor Cyan
 $dlls = Get-ChildItem $gstBin -Filter *.dll
